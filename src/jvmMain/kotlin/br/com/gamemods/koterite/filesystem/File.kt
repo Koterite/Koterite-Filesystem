@@ -17,10 +17,8 @@ actual inline class File actual constructor(actual val handler: FileHandler) : C
         handler.deleteOnExit()
     }
 
-    actual fun list(): Array<String>? = handler.list()
-
-    @Suppress("UNCHECKED_CAST")
-    actual fun listFiles() = handler.listFiles() as Array<File>?
+    actual fun list() = handler.list()?.toList()
+    actual fun listFiles(): List<File>? = handler.listFiles()?.map(::File)
 
     actual fun mkdir() = handler.mkdir()
     actual fun mkdirs() = handler.mkdirs()
@@ -28,19 +26,16 @@ actual inline class File actual constructor(actual val handler: FileHandler) : C
     actual fun setLastModified(time: Long) = handler.setLastModified(time)
     actual fun setReadOnly() = handler.setReadOnly()
     actual fun setWritable(writable: Boolean, ownerOnly: Boolean) = handler.setWritable(writable, ownerOnly)
-    actual fun setWritable(writable: Boolean) = handler.setWritable(writable)
     actual fun setReadable(readable: Boolean, ownerOnly: Boolean) = handler.setReadable(readable, ownerOnly)
-    actual fun setReadable(readable: Boolean) = handler.setReadable(readable)
     actual fun setExecutable(executable: Boolean, ownerOnly: Boolean) = handler.setExecutable(executable, ownerOnly)
-    actual fun setExecutable(executable: Boolean) = handler.setExecutable(executable)
     actual fun canExecute() = handler.canExecute()
     actual override fun toString() = handler.toString()
     override fun compareTo(other: File) = handler.compareTo(other.handler)
 }
 
 actual inline val File.name: String get() = handler.name
-actual inline val File.parent: String get() = handler.parent
-actual inline val File.parentFile: File get() = File(handler.parentFile)
+actual inline val File.parent: String? get() = handler.parent
+actual inline val File.parentFile: File? get() = handler.parentFile?.let(::File)
 actual inline val File.path: String get() = handler.path
 actual inline val File.isAbsolute get() = handler.isAbsolute
 actual inline val File.absolutePath: String get() = handler.absolutePath
@@ -60,6 +55,6 @@ actual inline var File.lastModified: Long
     get() = handler.lastModified()
     set(value) {
         if (!handler.setLastModified(value)) {
-            throw IOException()
+            throw IOException("Unable to change the last modified time")
         }
     }

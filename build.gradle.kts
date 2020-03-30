@@ -63,8 +63,8 @@ kotlin {
 
         all {
             languageSettings.apply {
-                //useExperimentalAnnotation("kotlin.ExperimentalMultiplatform")
-                //useExperimentalAnnotation("kotlin.RequiresOptIn")
+                useExperimentalAnnotation("kotlin.contracts.ExperimentalContracts")
+                useExperimentalAnnotation("kotlin.RequiresOptIn")
                 enableLanguageFeature("InlineClasses")
             }
         }
