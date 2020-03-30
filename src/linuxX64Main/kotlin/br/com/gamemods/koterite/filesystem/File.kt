@@ -3,7 +3,6 @@ package br.com.gamemods.koterite.filesystem
 import io.ktor.utils.io.errors.IOException
 import kotlinx.cinterop.*
 import platform.posix.*
-import platform.windows.*
 import kotlin.contracts.InvocationKind
 import kotlin.contracts.contract
 
@@ -39,14 +38,16 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
     actual fun list() = handler.listMapping { d_name.toKString() }
     actual fun listFiles(): List<File>? = handler.listMapping { File(d_name.toKString()) }
 
-    actual fun mkdir() = mkdir(handler.path) == 0
+    @ExperimentalUnsignedTypes
+    actual fun mkdir() = mkdir(handler.path, DEFAULT_DIR_FLAGS_U) == 0
 
+    @OptIn(ExperimentalUnsignedTypes::class)
     actual fun mkdirs(): Boolean {
         val builder = StringBuilder()
         var last = -1
         handler.path.split('/', '\\').forEach { name ->
             builder.append(name).append('/')
-            last = mkdir(builder.toString())
+            last = mkdir(builder.toString(), DEFAULT_DIR_FLAGS_U)
         }
         return last == 0
     }
@@ -86,12 +87,12 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
             if (mode and flags == flags) {
                 return true
             }
-            return chmod(handler.path, mode or flags) == 0
+            return chmod(handler.path, (mode or flags).toUInt()) == 0
         } else {
             if (mode and flags == 0) {
                 return true
             }
-            return chmod(handler.path, mode and flags.inv()) == 0
+            return chmod(handler.path, (mode and flags).toUInt().inv()) == 0
         }
     }
 
@@ -101,6 +102,9 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
     }
 }
 
+const val DEFAULT_DIR_FLAGS = S_IRWXU or S_IRWXG or S_IROTH or S_IXOTH
+@ExperimentalUnsignedTypes
+val DEFAULT_DIR_FLAGS_U = DEFAULT_DIR_FLAGS.toUInt()
 
 actual inline val File.name: String get() = handler.path.let {
     val index = it.lastIndexOfAny(charArrayOf('/', '\\'))
@@ -136,18 +140,13 @@ actual inline val File.canonicalFile: File get() = if (!isAbsolute) this else Fi
 
 actual inline val File.isDirectory: Boolean get() = stat { hasFlag(S_IFDIR) }
 actual inline val File.isFile: Boolean get() = stat { hasFlag(S_IFREG) }
-
-@OptIn(ExperimentalUnsignedTypes::class)
-actual inline val File.isHidden: Boolean get() = memScoped {
-    (GetFileAttributesW(handler.path).toInt() and FILE_ATTRIBUTE_HIDDEN) == FILE_ATTRIBUTE_HIDDEN
-}
-
+actual inline val File.isHidden: Boolean get() = name.startsWith('.')
 actual inline val File.totalSpace: Long get() = TODO()
 actual inline val File.freeSpace: Long get() = TODO()
 actual inline val File.usableSpace: Long get() = TODO()
 
 actual inline var File.lastModified: Long
-    get() = stat { st_mtime } * 1000L
+    get() = stat { st_mtim.tv_sec } * 1000L
     set(value) {
         if (!setLastModified(value)) {
             throw IOException("Unable to change the last modified time")
@@ -200,15 +199,11 @@ fun <R> FileHandler.listMapping(mapper: dirent.() -> R): List<R>? {
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun absolutePath(path: String): String {
     memScoped {
-        val buffer = allocArray<wchar_tVar>(MAX_PATH)
-        val written = GetCurrentDirectoryW(MAX_PATH, buffer)
-        if (written == 0u) throw AssertionError("Could not get the current directory! Code: " + GetLastError())
-        val currentDir = buffer.pointed.readValues(written.toInt()).ptr.toKString()
-        val absolute = PathCombineW(buffer, currentDir, path)
-            ?: throw AssertionError("Could not combine the paths!\nBase: $currentDir\nRelative:$path\nCode: " + GetLastError())
+        val buffer = allocArray<ByteVar>(PATH_MAX)
+        val absolute = realpath(path, buffer)
+            ?: throw AssertionError("Could not find the absolute path.\nRelative: $path\nCode: " + perror("realpath"))
         return absolute.toKString()
     }
 }

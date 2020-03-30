@@ -18,12 +18,19 @@ kotlin {
     mingwX64("windows") {
         binaries {
             sharedLib {
-                baseName = "koterite-filesystem"
+                baseName = "koterite_filesystem"
                 linkerOpts("-L${mingwPath.resolve("lib")}")
             }
         }
     }
-    //linuxX64()
+    linuxX64 {
+        binaries {
+            sharedLib {
+                baseName = "koterite_filesystem"
+            }
+        }
+    }
+
     /* Targets configuration omitted.
     *  To find out how to configure the targets, please follow the link:
     *  https://kotlinlang.org/docs/reference/building-mpp-with-gradle.html#setting-up-targets */
@@ -56,6 +63,12 @@ kotlin {
         }
 
         val windowsMain by getting {
+            dependencies {
+                api("io.ktor:ktor-client-curl:$ktor_version")
+            }
+        }
+
+        val linuxX64Main by getting {
             dependencies {
                 api("io.ktor:ktor-client-curl:$ktor_version")
             }
