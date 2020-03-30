@@ -66,7 +66,6 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
 
     actual fun setReadOnly() = setWritable(writable = false, ownerOnly = false)
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     actual fun setWritable(writable: Boolean, ownerOnly: Boolean): Boolean {
         return changeChmod(writable, if(ownerOnly) S_IWUSR else S_IWUSR or S_IWGRP or S_IWOTH)
     }
@@ -79,9 +78,8 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
         return changeChmod(executable, if(ownerOnly) S_IXUSR else S_IXUSR or S_IXGRP or S_IXOTH)
     }
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     private fun changeChmod(value: Boolean, flags: Int): Boolean {
-        val mode = stat { st_mode }.toInt()
+        val mode = stat { st_mode }.convert<Int>()
         if (value) {
             if (mode and flags == flags) {
                 return true
@@ -137,9 +135,8 @@ actual inline val File.canonicalFile: File get() = if (!isAbsolute) this else Fi
 actual inline val File.isDirectory: Boolean get() = stat { hasFlag(S_IFDIR) }
 actual inline val File.isFile: Boolean get() = stat { hasFlag(S_IFREG) }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 actual inline val File.isHidden: Boolean get() = memScoped {
-    (GetFileAttributesW(handler.path).toInt() and FILE_ATTRIBUTE_HIDDEN) == FILE_ATTRIBUTE_HIDDEN
+    (GetFileAttributesW(handler.path).convert<Int>() and FILE_ATTRIBUTE_HIDDEN) == FILE_ATTRIBUTE_HIDDEN
 }
 
 actual inline val File.totalSpace: Long get() = TODO()
@@ -166,8 +163,7 @@ inline fun <R> File.stat(operation: stat.() -> R): R {
 }
 
 @Suppress("NOTHING_TO_INLINE")
-@OptIn(ExperimentalUnsignedTypes::class)
-inline fun stat.hasFlag(flag: Int) = (st_mode.toInt() and flag) == flag
+inline fun stat.hasFlag(flag: Int) = (st_mode.convert<Int>() and flag) == flag
 
 private val filesPendingForRemoval = mutableSetOf<String>()
 
@@ -200,13 +196,12 @@ fun <R> FileHandler.listMapping(mapper: dirent.() -> R): List<R>? {
     }
 }
 
-@OptIn(ExperimentalUnsignedTypes::class)
 fun absolutePath(path: String): String {
     memScoped {
         val buffer = allocArray<wchar_tVar>(MAX_PATH)
-        val written = GetCurrentDirectoryW(MAX_PATH, buffer)
-        if (written == 0u) throw AssertionError("Could not get the current directory! Code: " + GetLastError())
-        val currentDir = buffer.pointed.readValues(written.toInt()).ptr.toKString()
+        val written = GetCurrentDirectoryW(MAX_PATH, buffer).convert<Int>()
+        if (written == 0) throw AssertionError("Could not get the current directory! Code: " + GetLastError())
+        val currentDir = buffer.pointed.readValues(written).ptr.toKString()
         val absolute = PathCombineW(buffer, currentDir, path)
             ?: throw AssertionError("Could not combine the paths!\nBase: $currentDir\nRelative:$path\nCode: " + GetLastError())
         return absolute.toKString()

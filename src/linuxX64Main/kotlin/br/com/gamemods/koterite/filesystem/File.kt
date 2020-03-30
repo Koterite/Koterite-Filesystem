@@ -38,16 +38,14 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
     actual fun list() = handler.listMapping { d_name.toKString() }
     actual fun listFiles(): List<File>? = handler.listMapping { File(d_name.toKString()) }
 
-    @ExperimentalUnsignedTypes
-    actual fun mkdir() = mkdir(handler.path, DEFAULT_DIR_FLAGS_U) == 0
+    actual fun mkdir() = mkdir(handler.path, DEFAULT_DIR_FLAGS.convert()) == 0
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     actual fun mkdirs(): Boolean {
         val builder = StringBuilder()
         var last = -1
         handler.path.split('/', '\\').forEach { name ->
             builder.append(name).append('/')
-            last = mkdir(builder.toString(), DEFAULT_DIR_FLAGS_U)
+            last = mkdir(builder.toString(), DEFAULT_DIR_FLAGS.convert())
         }
         return last == 0
     }
@@ -67,7 +65,6 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
 
     actual fun setReadOnly() = setWritable(writable = false, ownerOnly = false)
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     actual fun setWritable(writable: Boolean, ownerOnly: Boolean): Boolean {
         return changeChmod(writable, if(ownerOnly) S_IWUSR else S_IWUSR or S_IWGRP or S_IWOTH)
     }
@@ -80,19 +77,18 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
         return changeChmod(executable, if(ownerOnly) S_IXUSR else S_IXUSR or S_IXGRP or S_IXOTH)
     }
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     private fun changeChmod(value: Boolean, flags: Int): Boolean {
-        val mode = stat { st_mode }.toInt()
+        val mode = stat { st_mode }.convert<Int>()
         if (value) {
             if (mode and flags == flags) {
                 return true
             }
-            return chmod(handler.path, (mode or flags).toUInt()) == 0
+            return chmod(handler.path, (mode or flags).convert()) == 0
         } else {
             if (mode and flags == 0) {
                 return true
             }
-            return chmod(handler.path, (mode and flags).toUInt().inv()) == 0
+            return chmod(handler.path, (mode and flags).inv().convert()) == 0
         }
     }
 
@@ -103,8 +99,6 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
 }
 
 const val DEFAULT_DIR_FLAGS = S_IRWXU or S_IRWXG or S_IROTH or S_IXOTH
-@ExperimentalUnsignedTypes
-val DEFAULT_DIR_FLAGS_U = DEFAULT_DIR_FLAGS.toUInt()
 
 actual inline val File.name: String get() = handler.path.let {
     val index = it.lastIndexOfAny(charArrayOf('/', '\\'))
@@ -165,8 +159,7 @@ inline fun <R> File.stat(operation: stat.() -> R): R {
 }
 
 @Suppress("NOTHING_TO_INLINE")
-@OptIn(ExperimentalUnsignedTypes::class)
-inline fun stat.hasFlag(flag: Int) = (st_mode.toInt() and flag) == flag
+inline fun stat.hasFlag(flag: Int) = (st_mode.convert<Int>() and flag) == flag
 
 private val filesPendingForRemoval = mutableSetOf<String>()
 
