@@ -9,24 +9,18 @@ import kotlin.contracts.contract
 
 const val DEFAULT_DIR_FLAGS = S_IRWXU or S_IRWXG or S_IROTH or S_IXOTH
 
-actual inline val File.name: String get() = handler.path.let {
-    val index = it.lastIndexOfAny(charArrayOf('/', '\\'))
-    if (index < 0) it
-    else it.substring(index)
-}
+actual inline val File.name: String get() = handler.path.substringAfterLast('/')
 
 actual val File.parent: String? get() = handler.path.let {
-    if (it.isEmpty() || it == "/" || it.matches(Regex("""^[a-zA-Z]+:[/\\]?"""))) null
+    if (it.isEmpty() || it == "/") null
     else {
-        val index = it.lastIndexOfAny(charArrayOf('/', '\\'))
+        val index = it.lastIndexOf('/')
         if (index < 1) null
         else it.substring(0, index)
     }
 }
 
-actual val File.isAbsolute: Boolean get() = handler.path.let {
-    it.firstOrNull() == '/' || it.matches(Regex("^[a-zA-Z]+:.*"))
-}
+actual inline val File.isAbsolute: Boolean get() = handler.path.startsWith('/')
 
 actual inline val File.parentFile: File? get() = parent?.let(::File)
 actual inline val File.path: String get() = handler.path
