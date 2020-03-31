@@ -76,6 +76,7 @@ kotlin {
 
         all {
             languageSettings.apply {
+                useExperimentalAnnotation("br.com.gamemods.koterite.annotation.InternalApi")
                 useExperimentalAnnotation("kotlin.contracts.ExperimentalContracts")
                 useExperimentalAnnotation("kotlin.RequiresOptIn")
                 enableLanguageFeature("InlineClasses")

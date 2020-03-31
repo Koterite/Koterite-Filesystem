@@ -12,10 +12,10 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
     actual constructor(parent: String?, child: String) : this(FileHandler("$parent/$child"))
     actual constructor(parent: File?, child: String) : this(parent?.handler?.path, child)
 
-    actual fun canRead() = access(handler.path, R_OK) == 0
-    actual fun canWrite() = access(handler.path, W_OK) == 0
-    actual fun exists() = access(handler.path, F_OK) == 0
-    actual fun canExecute() = access(handler.path, X_OK) == 0
+    actual fun canRead() = _waccess_s(handler.pathW, R_OK) == 0
+    actual fun canWrite() = _waccess_s(handler.pathW, W_OK) == 0
+    actual fun exists() = _waccess_s(handler.pathW, F_OK) == 0
+    actual fun canExecute() = _waccess_s(handler.pathW, X_OK) == 0
 
     @Throws(IOException::class)
     actual fun createNewFile(): Boolean {
@@ -23,44 +23,51 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
             return false
         }
 
-        val fp = fopen(handler.path, "ab+") ?: return false
-        return fclose(fp) == 0
+        memScoped {
+            val fp = allocPointerTo<FILE>()
+            if (_wfopen_s(fp.ptr, handler.pathW, "ab+".wcstr) != 0) {
+                return false
+            }
+            return fclose(fp.value) == 0
+        }
     }
 
-    actual fun delete() = if (isDirectory) rmdir(handler.path) == 0 else remove(handler.path) == 0
+    actual fun delete() = if (isDirectory) _wrmdir(handler.pathW) == 0 else _wremove(handler.pathW) == 0
 
     actual fun deleteOnExit() {
         if (filesPendingForRemoval.isEmpty()) {
-            atexit(staticCFunction(::deletePendingFiles))
+            if (atexit(staticCFunction(::deletePendingFiles)) == 0) {
+                throw AssertionError("Failed to schedule the file $this for removal. Code: " + GetLastError())
+            }
         }
         filesPendingForRemoval += handler.path
     }
 
-    actual fun list() = handler.listMapping { d_name.toKString() }
-    actual fun listFiles(): List<File>? = handler.listMapping { File(d_name.toKString()) }
+    actual fun list(): List<String>? = handler.listMappingW { d_name.toKString().replace('\\', '/') }
+    actual fun listFiles(): List<File>? = handler.listMappingW { File(d_name.toKString()) }
 
-    actual fun mkdir() = mkdir(handler.path) == 0
+    actual fun mkdir() = _wmkdir(handler.pathW) == 0
 
     actual fun mkdirs(): Boolean {
         val builder = StringBuilder()
         var last = -1
         handler.path.split('/', '\\').forEach { name ->
             builder.append(name).append('/')
-            last = mkdir(builder.toString())
+            last = _wmkdir(builder.toString().wcstr)
         }
         return last == 0
     }
 
-    actual fun renameTo(dest: File) = rename(handler.path, dest.handler.path) == 0
+    actual fun renameTo(dest: File) = _wrename(handler.path.wcstr, dest.handler.path.wcstr) == 0
 
     actual fun setLastModified(time: Long): Boolean {
         require(time >= 0) { "Negative time is not allowed" }
         val seconds = time / 1000L
         return memScoped {
-            val buf = alloc<utimbuf>()
+            val buf = alloc<__utimbuf64>()
             buf.modtime = seconds
             buf.actime = seconds
-            utime(handler.path, buf.ptr) == 0
+            _wutime64(handler.path.wcstr, buf.ptr) == 0
         }
     }
 
@@ -79,17 +86,17 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
     }
 
     private fun changeChmod(value: Boolean, flags: Int): Boolean {
-        val mode = stat { st_mode }.convert<Int>()
+        val mode = statW { st_mode }.convert<Int>()
         if (value) {
             if (mode and flags == flags) {
                 return true
             }
-            return chmod(handler.path, mode or flags) == 0
+            return _wchmod(handler.pathW, mode or flags) == 0
         } else {
             if (mode and flags == 0) {
                 return true
             }
-            return chmod(handler.path, mode and flags.inv()) == 0
+            return _wchmod(handler.pathW, mode and flags.inv()) == 0
         }
     }
 
@@ -99,17 +106,12 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
     }
 }
 
-
-actual inline val File.name: String get() = handler.path.let {
-    val index = it.lastIndexOfAny(charArrayOf('/', '\\'))
-    if (index < 0) it
-    else it.substring(index)
-}
+actual inline val File.name: String get() = handler.path.substringAfterLast('/')
 
 actual val File.parent: String? get() = handler.path.let {
-    if (it.isEmpty() || it == "/" || it.matches(Regex("""^[a-zA-Z]+:[/\\]?"""))) null
+    if (it.isEmpty() || it == "/" || it.matches(Regex("""^[a-zA-Z]+:/?"""))) null
     else {
-        val index = it.lastIndexOfAny(charArrayOf('/', '\\'))
+        val index = it.lastIndexOf('/')
         if (index < 1) null
         else it.substring(0, index)
     }
@@ -132,8 +134,8 @@ actual inline val File.canonicalPath: String get() = if (!isAbsolute) handler.pa
 actual inline val File.absoluteFile: File get() = if (isAbsolute) this else File(absolutePath)
 actual inline val File.canonicalFile: File get() = if (!isAbsolute) this else File(canonicalPath)
 
-actual inline val File.isDirectory: Boolean get() = stat { hasFlag(S_IFDIR) }
-actual inline val File.isFile: Boolean get() = stat { hasFlag(S_IFREG) }
+actual inline val File.isDirectory: Boolean get() = statW { hasFlag(S_IFDIR) }
+actual inline val File.isFile: Boolean get() = statW { hasFlag(S_IFREG) }
 
 actual inline val File.isHidden: Boolean get() = memScoped {
     (GetFileAttributesW(handler.path).convert<Int>() and FILE_ATTRIBUTE_HIDDEN) == FILE_ATTRIBUTE_HIDDEN
@@ -144,55 +146,56 @@ actual inline val File.freeSpace: Long get() = TODO()
 actual inline val File.usableSpace: Long get() = TODO()
 
 actual inline var File.lastModified: Long
-    get() = stat { st_mtime } * 1000L
+    get() = statW { st_mtime } * 1000L
     set(value) {
         if (!setLastModified(value)) {
             throw IOException("Unable to change the last modified time")
         }
     }
 
-actual inline val File.length: Long get() = stat { st_size }.toLong()
+actual inline val File.length: Long get() = statW { st_size }
 
-inline fun <R> File.stat(operation: stat.() -> R): R {
+inline fun <R> File.statW(operation: _stat64.() -> R): R {
     contract { callsInPlace(operation, InvocationKind.EXACTLY_ONCE) }
     return memScoped {
-        val stat = alloc<stat>()
-        stat(handler.path, stat.ptr)
+        val stat = alloc<_stat64>()
+        _wstat64(handler.pathW, stat.ptr)
         operation(stat)
     }
 }
 
 @Suppress("NOTHING_TO_INLINE")
-inline fun stat.hasFlag(flag: Int) = (st_mode.convert<Int>() and flag) == flag
+inline fun _stat64.hasFlag(flag: Int) = (st_mode.convert<Int>() and flag) == flag
 
 private val filesPendingForRemoval = mutableSetOf<String>()
 
 private fun deletePendingFiles() {
     memScoped {
-        val stat = alloc<stat>()
+        val stat = alloc<_stat64>()
         val ptr = stat.ptr
         filesPendingForRemoval.reversed().forEach {
-            stat(it, ptr)
+            val fileName = it.wcstr
+            _wstat64(it.wcstr, ptr)
             if (stat.hasFlag(S_IFDIR)) {
-                rmdir(it)
+                _wrmdir(fileName)
             } else {
-                remove(it)
+                _wremove(fileName)
             }
         }
     }
 }
 
-fun <R> FileHandler.listMapping(mapper: dirent.() -> R): List<R>? {
-    val dir = opendir(path) ?: return null
+fun <R> FileHandler.listMappingW(mapper: _wdirent.() -> R): List<R>? {
+    val dir = _wopendir(pathW) ?: return null
     try {
-        var entry = readdir(dir) ?: return emptyList()
+        var entry = _wreaddir(dir) ?: return emptyList()
         val entries = mutableListOf<R>()
         while (true) {
             entries += entry.pointed.mapper()
-            entry = readdir(dir) ?: return entries
+            entry = _wreaddir(dir) ?: return entries
         }
     } finally {
-        closedir(dir)
+        _wclosedir(dir)
     }
 }
 
