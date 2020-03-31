@@ -3,9 +3,7 @@ package br.com.gamemods.koterite.filesystem
 import io.ktor.utils.io.errors.IOException
 import kotlinx.cinterop.*
 import platform.posix.*
-import platform.windows.*
-import kotlin.contracts.InvocationKind
-import kotlin.contracts.contract
+import platform.windows.GetLastError
 
 actual inline class File actual constructor(actual val handler: FileHandler): Comparable<File> {
     actual constructor(path: String) : this(FileHandler(path))
@@ -102,6 +100,6 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
 
     actual override fun toString() = handler.path
     override fun compareTo(other: File): Int {
-        TODO("Not yet implemented")
+        return PathComparator.compare(handler.path, other.handler.path)
     }
 }

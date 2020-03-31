@@ -92,6 +92,6 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
 
     actual override fun toString() = handler.path
     override fun compareTo(other: File): Int {
-        TODO("Not yet implemented")
+        return PathComparator.compare(handler.path, other.handler.path)
     }
 }
