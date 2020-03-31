@@ -98,7 +98,7 @@ actual inline class File actual constructor(actual val handler: FileHandler): Co
         }
     }
 
-    actual override fun toString() = handler.path
+    actual override fun toString() = memScoped { handler.pathW.ptr.toKString() }
     override fun compareTo(other: File): Int {
         return PathComparator.compare(handler.path, other.handler.path)
     }
